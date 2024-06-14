@@ -636,12 +636,7 @@ bool HttpTool::dispatchFrame(int fd, HttpCtx* ctx, bool bEnd) {
     NodeMsg* msg = NULL;
     int ret = 0;
 
-    if (0 == ctx->m_frame_beg) {
-        msg = m_center->creatFrameHd(ctx, bEnd);
-    } else {
-        msg = m_center->creatFrameMid(ctx, bEnd);
-    } 
-
+    msg = m_center->creatFrameHd(ctx, bEnd); 
     if (NULL != msg) {
         ret = m_center->dispatch(fd, msg);
         if (0 != ret) {
@@ -690,10 +685,13 @@ bool HttpTool::completeChunk(int fd, HttpCtx* ctx) {
 
 bool HttpTool::completeMsg(int fd, HttpCtx* ctx) {
     bool bOk = false;
+    unsigned seq = 0;
 
     bOk = dispatchFrame(fd, ctx, true);
     if (bOk) {
+        seq = ctx->m_seq;
         m_center->resetCtx(ctx);
+        ctx->m_seq = seq;
 
         SET_STAT(ctx, ENUM_RD_HTTP_HD);
     }

@@ -9,6 +9,7 @@
 #include"rtspcenter.h"
 #include"httputil.h"
 #include"msgcenter.h"
+#include"demo.h"
 
 
 class HttpSvr : public ISockSvr { 
@@ -30,12 +31,15 @@ public:
 private:
     HttpCenter* m_center;
     const GlobalConf* m_conf;
+    unsigned m_pkg_cnt;
 };
 
-class HttpCli : public ISockCli, public ITimerCb { 
+class HttpCli : public ISockCli { 
 public: 
     HttpCli(SockFrame* frame, HttpCenter* center,
         const GlobalConf* conf);
+    
+    virtual ~HttpCli();
 
     virtual int onConnOK(int hd, ConnOption& opt);
 
@@ -48,7 +52,7 @@ public:
     virtual int parseData(int fd, const char* buf, 
         int size, const SockAddr* addr);
 
-    virtual void onTimerPerSec();
+    void onTimerPerSec();
 
     void sendHttpReq(int hd, int cnt);
 
@@ -56,6 +60,7 @@ public:
 
 private:
     SockFrame* m_frame;
+    TimerObj* m_timer_1sec;
     HttpCenter* m_center;
     unsigned m_seconds;
     unsigned m_pkg_cnt;
@@ -65,13 +70,14 @@ private:
 HttpSvr::HttpSvr(HttpCenter* center,
     const GlobalConf* conf)
     : m_center(center), m_conf(conf) {
+    m_pkg_cnt = 0;
 } 
 
-int HttpSvr::onNewSock(int fd, int, AccptOption& opt) {
+int HttpSvr::onNewSock(int, int, AccptOption& opt) {
     HttpCtx* ctx = NULL;
     int ret = 0;
 
-    ctx = m_center->creatSvrSock(fd);
+    ctx = m_center->creatSock();
     if (NULL != ctx) {
         opt.m_extra = (long)ctx;
         opt.m_rd_thresh = m_conf->m_rd_thresh;
@@ -95,6 +101,13 @@ int HttpSvr::process(int hd, NodeMsg* msg) {
     int ret = 0;
 
     ret = m_center->process(hd, msg);
+
+    ++m_pkg_cnt;
+
+    if (!(m_pkg_cnt & m_conf->m_prnt_mask)) {
+        LOG_INFO("proc_msg| pkg_cnt=%u|", m_pkg_cnt);
+    }
+    
     return ret;
 }
 
@@ -106,6 +119,13 @@ int HttpSvr::parseData(int fd, const char* buf,
     return ret;
 }
 
+static bool _timerOneSec(long p1, long) {
+    HttpCli* cli = (HttpCli*)p1;
+
+    cli->onTimerPerSec();
+    return true;
+}
+
 HttpCli::HttpCli(SockFrame* frame, 
     HttpCenter* center,
     const GlobalConf* conf) 
@@ -113,6 +133,19 @@ HttpCli::HttpCli(SockFrame* frame,
     m_conf(conf) {
     m_seconds = 0;
     m_pkg_cnt = 0;
+
+    m_timer_1sec = m_frame->allocTimer();
+    m_frame->setParam(m_timer_1sec, &_timerOneSec,
+        (long)this);
+    
+    m_frame->startTimer(m_timer_1sec, 0, 1);
+}
+
+HttpCli::~HttpCli() {
+    if (NULL != m_timer_1sec) {
+        m_frame->freeTimer(m_timer_1sec);
+        m_timer_1sec = NULL;
+    }
 }
 
 void HttpCli::onClose(int hd) { 
@@ -204,6 +237,7 @@ Service::Service() {
     m_http_cli = NULL;
     m_center = NULL;
     m_dealer = NULL;
+    m_demo = NULL;
 
     m_config = new GlobalConf;
     
@@ -245,8 +279,11 @@ int Service::init() {
         m_http_svr = new HttpSvr(m_center, m_config);
         m_http_cli = new HttpCli(m_frame, m_center, m_config);
 
-        m_dealer = new RtspHandler(m_center);
-        m_center->setDealer(m_dealer); 
+        m_dealer = new RtspHandler(m_frame, m_center);
+        m_center->addDealer(m_dealer); 
+        
+        m_demo = new TestDemo(m_frame, m_center);
+        m_center->addDealer(m_demo); 
     } while (0);
 
     return ret;
@@ -282,6 +319,11 @@ void Service::finish() {
         delete m_dealer;
         m_dealer = NULL;
     }
+
+    if (NULL != m_demo) {
+        delete m_demo;
+        m_demo = NULL;
+    }
     
     if (NULL != m_frame) {
         SockFrame::destroy(m_frame);
@@ -296,7 +338,7 @@ void Service::addSvr(const char ip[], int port) {
 void Service::addCli(const char ip[], int port) {
     HttpCtx* ctx = NULL;
 
-    ctx = m_center->creatCliSock();
+    ctx = m_center->creatSock();
     
     m_frame->creatCli(ip, port, m_http_cli, (long)ctx);
 }
@@ -305,8 +347,6 @@ int Service::prepare() {
     int ret = 0;
 
     if (0 == m_config->m_role) { 
-        m_frame->setTimerPerSec(m_http_cli);
-
         ret = readFile(m_config->m_body.c_str(),
             m_config->m_body_text);
         if (0 == ret) {

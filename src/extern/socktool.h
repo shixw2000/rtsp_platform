@@ -5,11 +5,11 @@
 
 class SockTool {
 public:
-    static int openAddr(int* pfd, const SockAddr& addr,
-        int backlog=MAX_BACKLOG_NUM);
+    static int openAddr(int* pfd, 
+        const SockAddr& addr, int backlog);
     
-    static int openName(int* pfd, const SockName& name,
-        int backlog=MAX_BACKLOG_NUM); 
+    static int openName(int* pfd,
+        const SockName& name, int backlog); 
     
     static int connAddr(int* pfd, const SockAddr& addr); 
     static int connName(int* pfd, const SockName& name);

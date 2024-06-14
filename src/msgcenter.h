@@ -1,9 +1,7 @@
 #ifndef __MSGCENTER_H__
 #define __MSGCENTER_H__
+#include"shareheader.h"
 
-
-struct NodeMsg;
-struct Cache;
 
 class MsgCenter {
 public:
@@ -15,27 +13,36 @@ public:
     }
     
     static NodeMsg* allocFrameHd(int line);
-    static NodeMsg* allocFrameMid();
     static NodeMsg* allocHttpMsg(int total);
     static NodeMsg* allocMsg(int type, int total);
     
     static void freeMsg(NodeMsg* pb);
-    static NodeMsg* refMsg(NodeMsg* pb);
+    static NodeMsg* refMsg(NodeMsg* pb); 
 
-    static char* getMsg(NodeMsg* msg);
-    static int getMsgSize(NodeMsg* msg);
+    static int getTotal(NodeMsg* pb); 
     
-    static int getType(NodeMsg* msg);
+    static char* getMsg(NodeMsg* msg, bool ext = false);
+    static char* getCurr(NodeMsg* msg, bool ext = false);
+    static int getLeft(NodeMsg* msg, bool ext = false);
+    
+    static int getMsgSize(NodeMsg* msg, bool ext = false);
+    static int getMsgPos(NodeMsg* pb, bool ext = false);
 
-    static void setExtraCache(NodeMsg* pb, 
-        Cache* cache, int size);
+    static void setMsgSize(NodeMsg* pb, int size, bool ext = false);
+    static void setMsgPos(NodeMsg* pb, int pos, bool ext = false);
+    static void skipMsgPos(NodeMsg* pb, int pos, bool ext = false); 
+    
+    static Cache* getCache(NodeMsg* pb, bool ext = false);
+    static void setCache(NodeMsg* pb, Cache* cache,
+        int size, bool ext = false);
+    
+    static int getType(NodeMsg* msg); 
 
-    static Cache* getExtraCache(NodeMsg* pb);
-    static int getExtraSize(NodeMsg* pb); 
-    static int getExtraPos(NodeMsg* pb); 
-    static char* getExtraData(NodeMsg* pb);
+    static NodeMsg* allocUdpMsg(int size);
+    static NodeMsg* refUdpMsg(NodeMsg* msg);
 
-    static void setExtraPos(NodeMsg* pb, int pos);
+    static int setUdpAddr(NodeMsg* msg, const SockAddr& addr);
+    static const SockAddr* getUdpAddr(NodeMsg* msg);
 
 private:
     static void freeFrameHdCb(char* psz); 

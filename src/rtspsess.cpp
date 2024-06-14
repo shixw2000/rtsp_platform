@@ -11,169 +11,39 @@
 #include"rtspres.h"
 
 
-SessionCtx* RtspSess::creatSess(const Token& sid,
-    const Token& path) {
-    SessionCtx* ptr = NULL;
-
-    ptr = (SessionCtx*)CacheUtil::mallocAlign(sizeof(SessionCtx));
-    MiscTool::bzero(ptr, sizeof(SessionCtx));
-
-    TokenUtil::copy(ptr->m_sid, sizeof(ptr->m_sid), &sid);
-    TokenUtil::copy(ptr->m_path, sizeof(ptr->m_path), &path);
-    return ptr;
-}
-
-FFStream* RtspSess::creatStream() {
-    FFStream* s = NULL;
-
-    s = (FFStream*)CacheUtil::mallocAlign(sizeof(FFStream));
-    MiscTool::bzero(s, sizeof(FFStream));
-    return s;
-}
-
-void RtspSess::freeSess(SessionCtx* sess) {
-    FFStream* s = NULL;
-    
-    if (NULL != sess) {
-        for (int i=0; i<sess->m_stream_cnt; ++i) {
-            s = sess->m_stream[i];
-            freeStream(s);
-
-            sess->m_stream[i] = NULL;
-        }
-
-        CacheUtil::freeAlign(sess);
-    }
-}
-
-void RtspSess::freeStream(FFStream* s) {
-    if (NULL != s) {
-        CacheUtil::freeAlign(s);
-    }
-}
-
-SessionCtx* RtspSess::findSess(const Token& sid) {
+RtspCtx* RtspSess::findSess(const char sid[]) {
     constItrSess itr;
-    typeStr strKey;
-
-    if (!TokenUtil::isEmpty(&sid)) { 
-        strKey.assign(sid.m_str, sid.m_len);
         
-        itr = m_sess.find(strKey);
-        if (m_sess.end() != itr) {
-            return itr->second;
-        } else { 
-            return NULL;
-        }
-    } else {
+    itr = m_sess.find(sid);
+    if (m_sess.end() != itr) {
+        return itr->second;
+    } else { 
         return NULL;
     }
 }
 
-bool RtspSess::isSessPath(SessionCtx* sess, const Token& path) {
-    return TokenUtil::strCmp(&path, sess->m_path, false);
-}
-
-FFStream* RtspSess::findStream(SessionCtx* sess, const Token& path) {
-    const SdpMedia* media = NULL;
-    FFStream* s = NULL;
-    Token dst;
-    Token needle;
-
-    dst.set(sess->m_path);
-
-    do { 
-        if (dst.m_len > path.m_len) {
-            break;
-        }
-        
-        needle.set(path.m_str, dst.m_len); 
-        if (!TokenUtil::strCmp(&dst, needle, false)) {
-            break;
-        }
-
-        if (dst.m_len == path.m_len) {
-            /* match resource path */
-            return sess->m_stream[0];
-        } else if (DEF_URL_SEP_CHAR != path.m_str[dst.m_len]) {
-            break;
-        } else {
-            /* find sub path */
-        }
-        
-        /* partial match */
-        TokenUtil::substr(&needle, &path, dst.m_len + 1);
-        if (TokenUtil::isEmpty(&needle)) {
-            break;
-        } 
-
-        for (int i=0; i<sess->m_stream_cnt; ++i) {
-            s = sess->m_stream[i];
-            media = s->m_media;
-            
-            dst.set(media->m_path);
-            if (TokenUtil::strCmp(&dst, needle, false)) {
-                return s;
-            }
-        }
-    } while (false);
-    
-    return NULL;
-}
-
-SessionCtx* RtspSess::prepareSess(const Token& sid,
-    const Token& path) {
-    SessionCtx* sess = NULL;
+bool RtspSess::existSess(const char sid[]) {
     constItrSess itr;
-    typeStr strKey;
-
-    if (!TokenUtil::isEmpty(&sid)) { 
-        strKey.assign(sid.m_str, sid.m_len);
         
-        itr = m_sess.find(strKey);
-        if (m_sess.end() != itr) {
-            return itr->second;
-        } else { 
-            sess = creatSess(sid, path);
-            if (NULL != sess) {
-                m_sess[strKey] = sess;
-            }
-
-            return sess;
-        }
-    } else {
-        return NULL;
-    }
-}
-
-bool RtspSess::existSess(const Token& sid) {
-    constItrSess itr;
-    typeStr strKey;
-
-    if (!TokenUtil::isEmpty(&sid)) { 
-        strKey.assign(sid.m_str, sid.m_len);
-        
-        itr = m_sess.find(strKey);
-        if (m_sess.end() != itr) {
-            return true;
-        } else { 
-            return false;
-        }
-    } else {
+    itr = m_sess.find(sid);
+    if (m_sess.end() != itr) {
+        return true;
+    } else { 
         return false;
     }
 }
 
-bool RtspSess::addSess(SessionCtx* ctx) {
+bool RtspSess::addSess(RtspCtx* ctx) {
+    const char* psz = NULL;
     bool found = false;
     typeStr strKey;
 
-    if (NULL != ctx &&
-        DEF_NULL_CHAR != ctx->m_sid[0]) { 
-        found = existSess(ctx->m_sid);
+    if (NULL != ctx && !TokenUtil::isNULL(ctx->m_sid[0])) { 
+        psz = ctx->m_sid;
+        
+        found = existSess(psz);
         if (!found) {
-            strKey.assign(ctx->m_sid);
-            m_sess[strKey] = ctx;
+            m_sess[psz] = ctx;
             return true;
         } else {
             return false;
@@ -183,17 +53,28 @@ bool RtspSess::addSess(SessionCtx* ctx) {
     }
 }
 
-void RtspSess::delSess(const Token& sid) {
-    itrSess itr;
-    typeStr strKey;
+void RtspSess::delSess(const char sid[]) {
+    itrSess itr; 
 
-    if (!TokenUtil::isEmpty(&sid)) { 
-        strKey.assign(sid.m_str, sid.m_len);
+    itr = m_sess.find(sid);
+    if (m_sess.end() != itr) {
+        m_sess.erase(itr);
+    } 
+}
+
+void RtspSess::genSess(char sid[], int max) {
+    bool found = false;
+    char buf[DEF_SESS_NUM_LEN] = {0};
         
-        itr = m_sess.find(strKey);
-        if (m_sess.end() != itr) {
-            m_sess.erase(itr);
-        }
+    if (DEF_SESS_NUM_LEN * 2 + 1 <= max) {
+        do {
+            MiscTool::getRand(buf, DEF_SESS_NUM_LEN);
+            TokenUtil::toHexStr(sid, buf, DEF_SESS_NUM_LEN);
+            found = existSess(sid);
+        } while (found);
+    } else {
+        MiscTool::bzero(sid, max);
     }
 }
+
 

@@ -3,17 +3,21 @@
 #include"rtspdata.h"
 
 
+struct SdpParseStat {
+    bool m_skip_media;
+    int m_ttl;
+    char m_ip[DEF_IP_SIZE];
+};
+
 class SdpUtil {
 public: 
-    SdpData* creatSDP(const Token& path);
+    SdpData* creatSDP();
     void freeSDP(SdpData* stream);
 
     SdpMedia* creatMedia();
     void freeMedia(SdpMedia* media);
 
-    int findMedia(SdpData* sdp, const Token& path);
-    
-    int prepareSDP(HttpCache* cache, const SdpData* sdp);
+    int genSDP(HttpCache* cache, const SdpData* sdp);
 
     int parseSDP(SdpData* sdp, Token* text);
     

@@ -354,8 +354,8 @@ NodeMsg* HttpUtil::genHttpCache(
 
         if (0 < blen) {
             ref = CacheUtil::ref(cache);
-            MsgCenter::setExtraCache(msg, ref, size); 
-            MsgCenter::setExtraPos(msg, pos);
+            MsgCenter::setCache(msg, ref, size, true); 
+            MsgCenter::setMsgPos(msg, pos, true);
         }
     }
 
@@ -456,7 +456,7 @@ void HttpUtil::release(HttpCache* cache) {
 bool HttpUtil::grow(HttpCache* cache, 
     int capacity, bool extended) {
     Cache* c = NULL;
-    bool bOk = true;
+    bool bOk = false;
 
     if (0 < capacity && cache->m_capacity < capacity) {
         if (extended) {
@@ -466,18 +466,19 @@ bool HttpUtil::grow(HttpCache* cache,
         
         if (NULL != cache->m_cache) {
             c = CacheUtil::realloc(cache->m_cache, 
-                capacity, cache->m_size);
-            if (NULL != c) {
-                cache->m_cache = c;
-                cache->m_capacity = capacity;
-            } else {
-                bOk = false;
-            }
+                capacity, cache->m_size); 
         } else {
             /* init state */
-            cache->m_cache = CacheUtil::alloc(capacity);
+            c = CacheUtil::alloc(capacity); 
+        }
+
+        if (NULL != c) {
+            cache->m_cache = c;
             cache->m_capacity = capacity;
-        } 
+            bOk = true;
+        }
+    } else {
+        bOk = true;
     }
 
     return bOk;

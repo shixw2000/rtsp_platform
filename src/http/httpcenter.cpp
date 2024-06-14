@@ -13,12 +13,13 @@
 #include"httputil.h"
 
 
-static const int PRINT_HTTP_BODY_LEN = 10;
+static const int PRINT_HTTP_BODY_LEN = 100;
 
 HttpCenter::HttpCenter(SockFrame* frame) 
     : m_frame(frame) {
     m_tool = NULL;
-    m_dealer = NULL;
+    
+    MiscTool::bzero(m_dealer, sizeof(m_dealer));
 }
 
 HttpCenter::~HttpCenter() {
@@ -39,39 +40,38 @@ void HttpCenter::finish() {
     }
 }
 
-void HttpCenter::setDealer(IHttpDealer* dealer) {
-    m_dealer = dealer;
+void HttpCenter::addDealer(IHttpDealer* dealer) {
+    for (int i=0; i<MAX_DEALER_SIZE; ++i) {
+        if (NULL == m_dealer[i]) {
+            m_dealer[i] = dealer;
+            break;
+        }
+    }
 }
 
 void HttpCenter::resetCtx(HttpCtx* ctx) {
+    
     HttpUtil::release(&ctx->m_head);
     HttpUtil::release(&ctx->m_body);
     
     MiscTool::bzero(ctx, sizeof(HttpCtx)); 
 }
 
-HttpCtx* HttpCenter::allocHttpEnv() {
+HttpCtx* HttpCenter::allocHttp() {
     HttpCtx* ctx = NULL;
-
-    if (NULL != m_dealer) {
-        ctx = m_dealer->allocHttpEnv();
-        if (NULL != ctx) {
-            MiscTool::bzero(ctx, sizeof(HttpCtx));
-        }
-    }
     
+    ctx = (HttpCtx*)CacheUtil::mallocAlign(sizeof(HttpCtx));
+    MiscTool::bzero(ctx, sizeof(HttpCtx));
     return ctx;
 }
 
-void HttpCenter::freeHttpCtx(HttpCtx* ctx) { 
+void HttpCenter::freeHttp(HttpCtx* ctx) { 
     if (NULL != ctx) {
         resetCtx(ctx);
-
-        if (NULL != m_dealer) {
-            m_dealer->freeHttpCtx(ctx);
-        }
+        
+        CacheUtil::freeAlign(ctx);
     }
-} 
+}
 
 int HttpCenter::dispatch(int fd, NodeMsg* msg) {
     int ret = 0;
@@ -86,24 +86,31 @@ int HttpCenter::dispatch(int fd, NodeMsg* msg) {
     return ret;
 }
 
-int HttpCenter::send(int fd, NodeMsg* msg) {
-    int ret = 0;
-    int elen = 0;
+void HttpCenter::printHttpSendMsg(NodeMsg* msg) {
+    int hlen = 0;
+    int blen = 0;
     int prntlen = 0;
 
-    elen = MsgCenter::getExtraSize(msg);
-    if (PRINT_HTTP_BODY_LEN < elen) {
+    hlen = MsgCenter::getMsgSize(msg);
+    
+    blen = MsgCenter::getMsgSize(msg, true);
+    if (PRINT_HTTP_BODY_LEN < blen) {
         prntlen = PRINT_HTTP_BODY_LEN;
     } else {
-        prntlen = elen;
+        prntlen = blen;
     }
 
-    LOG_DEBUG("send_msg| hlen=%d| elen=%d|"
+    LOG_DEBUG("print_http_send_msg| hlen=%d| blen=%d|"
         " msg=%.*s%.*s|",
-        MsgCenter::getMsgSize(msg), elen,  
-        MsgCenter::getMsgSize(msg),
-        MsgCenter::getMsg(msg),
-        prntlen, MsgCenter::getExtraData(msg));
+        hlen, blen,  
+        hlen, MsgCenter::getMsg(msg),
+        prntlen, MsgCenter::getMsg(msg, true));
+}
+
+int HttpCenter::send(int fd, NodeMsg* msg) {
+    int ret = 0;
+
+    printHttpSendMsg(msg);
 
     ret = m_frame->sendMsg(fd, msg);
     if (0 != ret) {
@@ -192,13 +199,15 @@ void HttpCenter::printFrameHd(NodeMsg* msg) {
         len = MiscTool::strPrint(psz, max, "print_http_hd|"
             " seq=%u| isEnd=%d| is_chunk=%d|"
             " line_no=%d| content_len=%d|"
-            " hd_size=%d| body_size=%d|\n"
+            " hd_size=%d| frame_beg=%d|"
+            " body_size=%d|\n"
             "%.*s %.*s %s\n",
             body->m_seq, body->m_is_end,
             body->m_is_chunk,
             body->m_line_no,
             body->m_content_len,
             body->m_hd_size,
+            body->m_frame_beg,
             body->m_body_size,
             key.m_len, key.m_str,
             val.m_len, val.m_str,
@@ -207,13 +216,15 @@ void HttpCenter::printFrameHd(NodeMsg* msg) {
         len = MiscTool::strPrint(psz, max, "print_http_hd|"
             " seq=%u| isEnd=%d| is_chunk=%d|"
             " line_no=%d| content_len=%d|"
-            " hd_size=%d| body_size=%d|\n"
+            " hd_size=%d| frame_beg=%d|"
+            " body_size=%d|\n"
             "%s %.*s %.*s\n",
             body->m_seq, body->m_is_end,
             body->m_is_chunk,
             body->m_line_no,
             body->m_content_len,
             body->m_hd_size,
+            body->m_frame_beg,
             body->m_body_size,
             HttpUtil::getVersionStr(body->m_http_ver),
             key.m_len, key.m_str,
@@ -224,7 +235,7 @@ void HttpCenter::printFrameHd(NodeMsg* msg) {
         psz += len;
         max -= len;
     }
-    
+
     for (int i=1; 0 < max && i<body->m_line_no; ++i) {
         getLine(body, i, &key, &val); 
         
@@ -258,51 +269,6 @@ void HttpCenter::printFrameHd(NodeMsg* msg) {
     LOG_DEBUG("%s", tmp);
 }
 
-void HttpCenter::printFrameMid(NodeMsg* msg) {
-    const HttpFrameMid* body = NULL;
-    char* psz = NULL;
-    char* txt = NULL;
-    int max = 0;
-    int txtlen = 0;
-    int len = 0;
-    char tmp[1024] = {0};
-
-    psz = tmp;
-    max = sizeof(tmp);
-
-    body = MsgCenter::getBody<HttpFrameMid>(msg);
-
-    len = MiscTool::strPrint(psz, max, "print_http_mid|"
-        " seq=%u| isEnd=%d| is_chunk=%d|"
-        " frame_beg=%d| body_size=%d|\n",
-        body->m_seq, body->m_is_end,
-        body->m_is_chunk,
-        body->m_frame_beg,
-        body->m_body_size); 
-    if (0 < len && len < max) {
-        psz += len;
-        max -= len;
-    }
-
-    if (0 < body->m_body_size) {
-        txt = CacheUtil::data(body->m_body);
-
-        if (PRINT_HTTP_BODY_LEN > body->m_body_size) {
-            txtlen = body->m_body_size;
-        } else {
-            txtlen = PRINT_HTTP_BODY_LEN;
-        }
-    }
-    
-    len = MiscTool::strPrint(psz, max, "body=%.*s|", txtlen, txt);
-    if (0 < len) { 
-        psz += len;
-        max -= len;
-    }
-
-    LOG_DEBUG("%s", tmp);
-}
-
 int HttpCenter::parseData(int fd, const char* buf, int size) {
     HttpCtx* ctx = NULL;
     int ret = 0;
@@ -313,27 +279,10 @@ int HttpCenter::parseData(int fd, const char* buf, int size) {
     return ret;
 }
 
-HttpCtx* HttpCenter::creatSvrSock(int fd) {
-    HttpCtx* env = NULL;
-    bool bOk = false;
-
-    env = allocHttpEnv();
-    if (NULL != env && NULL != m_dealer) {
-        bOk = m_dealer->bindCtx(fd, env);
-        if (!bOk) {
-            freeHttpCtx(env);
-
-            env = NULL;
-        }
-    }
-    
-    return env;
-}
-
-HttpCtx* HttpCenter::creatCliSock() {
+HttpCtx* HttpCenter::creatSock() {
     HttpCtx* env = NULL;
 
-    env = allocHttpEnv();
+    env = allocHttp(); 
     return env;
 }
 
@@ -344,47 +293,28 @@ void HttpCenter::onConnFail(long extra, int) {
     HttpCtx* ctx = NULL;
     
     ctx = (HttpCtx*)extra;
-    freeHttpCtx(ctx);
+    freeHttp(ctx);
 }
 
-int HttpCenter::onConnOK(int hd) {
-    HttpCtx* env = NULL;
-    int ret = 0; 
-    bool bOk = false;
-
-    env = (HttpCtx*)m_frame->getExtra(hd);
-    if (NULL != m_dealer) {
-        bOk = m_dealer->bindCtx(hd, env);
-        if (!bOk) {
-            ret = -1;
-        }
-    }
-  
-    return ret;
+int HttpCenter::onConnOK(int) { 
+    return 0;
 } 
 
 void HttpCenter::onClose(int hd) {
     HttpCtx* ctx = NULL;
 
     ctx = (HttpCtx*)m_frame->getExtra(hd);
-    freeHttpCtx(ctx);
+    freeHttp(ctx);
 }
 
 int HttpCenter::process(int hd, NodeMsg* msg) { 
-    HttpCtx* ctx = NULL;
     int ret = 0; 
     int type = 0;
 
-    ctx = (HttpCtx*)m_frame->getExtra(hd);
-    
     type = MsgCenter::getType(msg);
     switch (type) {
     case ENUM_HTTP_FRAME_HD:
-        ret = procFrameHd(hd, ctx, msg);
-        break;
-
-    case ENUM_HTTP_FRAME_MID:
-        ret = procFrameMid(hd, ctx, msg);
+        ret = procFrameHd(hd, msg);
         break;
 
     default:
@@ -398,7 +328,6 @@ NodeMsg* HttpCenter::creatFrameHd(HttpCtx* ctx, bool isEnd) {
     NodeMsg* msg = NULL;
     HttpFrameHd* http = NULL;
     int total = 0;
-    unsigned seq = 0;
 
     msg = MsgCenter::allocFrameHd(ctx->m_line_no);
     http = MsgCenter::getBody<HttpFrameHd>(msg); 
@@ -416,9 +345,11 @@ NodeMsg* HttpCenter::creatFrameHd(HttpCtx* ctx, bool isEnd) {
     http->m_line_no = ctx->m_line_no;
     http->m_http_ver = ctx->m_http_ver;
     http->m_is_req = ctx->m_is_req;
+
+    http->m_frame_beg = ctx->m_frame_beg;
     http->m_is_chunk = ctx->m_is_chunk;
     http->m_is_end = isEnd;
-    http->m_seq = seq;
+    http->m_seq = ++ctx->m_seq;
     http->m_content_len = ctx->m_content_len;
 
     if (0 < ctx->m_line_no) {
@@ -431,48 +362,20 @@ NodeMsg* HttpCenter::creatFrameHd(HttpCtx* ctx, bool isEnd) {
     return msg;
 }
 
-NodeMsg* HttpCenter::creatFrameMid(HttpCtx* ctx, bool isEnd) {
-    NodeMsg* msg = NULL;
-    HttpFrameMid* http = NULL;
-    unsigned seq = 0;
-
-    msg = MsgCenter::allocFrameMid();
-    http = MsgCenter::getBody<HttpFrameMid>(msg); 
-    
-    http->m_body_size = HttpUtil::totalRd(&ctx->m_body);
-    if (0 < http->m_body_size) {
-        http->m_body = CacheUtil::ref(ctx->m_body.m_cache);
-    }
-    
-    http->m_frame_beg = ctx->m_frame_beg;
-    http->m_is_end = isEnd;
-    http->m_is_chunk = ctx->m_is_chunk;
-    http->m_seq = seq; 
-    
-    return msg;
-}
-
-int HttpCenter::procFrameHd(int hd, HttpCtx* ctx, NodeMsg* msg) {
+int HttpCenter::procFrameHd(int hd, NodeMsg* msg) {
     int ret = 0; 
+    bool done = false;
     
     printFrameHd(msg);
 
-    if (NULL != m_dealer) {
-        ret = m_dealer->procFrameHd(hd, ctx, msg);
+    for (int i=0; !done && i<MAX_DEALER_SIZE; ++i) {
+        if (NULL != m_dealer[i]) {
+            done = m_dealer[i]->procFrameHd(hd, msg);
+        } else {
+            break;
+        }
     }
     
     return ret;
 }
-
-int HttpCenter::procFrameMid(int hd, HttpCtx* ctx, NodeMsg* msg) {
-    int ret = 0;
-
-    printFrameMid(msg);
-
-    if (NULL != m_dealer) {
-        ret = m_dealer->procFrameMid(hd, ctx, msg); 
-    }
-    
-    return ret;
-} 
 

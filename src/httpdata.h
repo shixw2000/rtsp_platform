@@ -127,6 +127,7 @@ struct HttpCtx {
     HttpCache m_head;
     HttpCache m_body;
     Range m_ranges[MAX_LINE_CNT * 2];
+    unsigned m_seq;
     int m_err_code;
     int m_rd_stat;
     int m_line_no;

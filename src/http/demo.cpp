@@ -11,62 +11,85 @@
 #include"isockmsg.h"
 #include"httputil.h"
 #include"demo.h"
+#include"sockframe.h"
 
 
-TestDemo::TestDemo(HttpCenter* center)
-    : m_center(center) {
+TestDemo::TestDemo(SockFrame* frame, HttpCenter* center)
+    : m_frame(frame), m_center(center) {
 }
 
-int TestDemo::procFrameHd(int hd, HttpCtx*, NodeMsg* msg) {
+bool TestDemo::procFrameHd(int hd, NodeMsg* msg) {
     HttpFrameHd* body = NULL;
+    bool isAlive = false;
+
+    body = MsgCenter::getBody<HttpFrameHd>(msg);
+    isAlive = chkAlive(body);
+    
+    if (0 == body->m_frame_beg) { 
+        rspHttpFrame(hd, body->m_http_ver, isAlive,
+            body->m_body, body->m_body_size);
+    }
+
+    if (body->m_is_end && !isAlive) {
+        m_frame->closeData(hd);
+    }
+    
+    return true;
+}
+
+bool TestDemo::chkAlive(const HttpFrameHd* body) {
+    bool bOk = false;
+    bool isAlive = false;
+    Token key;
+    
+    switch (body->m_http_ver) {
+    case HTTP_VER_10_VAL:
+        isAlive = false;
+        break;
+        
+    case HTTP_VER_11_VAL:
+    default:
+        isAlive = true;
+        break;
+    }
+    
+    bOk = m_center->findEnumField(body, 
+        ENUM_HTTP_CONNECTION, &key);
+    if (bOk) {
+        if (TokenUtil::strCmp(&key, "Keep-Alive", true)) {
+            isAlive = true;
+        } else if (TokenUtil::strCmp(&key, "Close", true)) {
+            isAlive = false;
+        } else {
+            /* do nothing */
+        }
+    }
+
+    return isAlive;
+}
+
+void TestDemo::rspHttpFrame(int hd, int ver,
+    bool isAlive, Cache* body, int blen) {
     NodeMsg* rsp = NULL;
-    int ret = 0;
     HttpCache* pp[1] = {NULL};
     HttpCache cache;
-
-    HttpUtil::init(&cache);
-    body = MsgCenter::getBody<HttpFrameHd>(msg); 
     
-    HttpUtil::addRspParam(&cache,
-        body->m_http_ver, RTSP_STATUS_OK);
+    HttpUtil::init(&cache);
 
-    HttpUtil::addEnumField(&cache, ENUM_HTTP_CONNECTION, "Keep-Alive");
+    HttpUtil::addRspParam(&cache, ver, RTSP_STATUS_OK);
+
+    if (isAlive) {
+        HttpUtil::addEnumField(&cache, ENUM_HTTP_CONNECTION, "Keep-Alive");
+    } else {
+        HttpUtil::addEnumField(&cache, ENUM_HTTP_CONNECTION, "Close");
+    }
     
     pp[0] = &cache;
-    rsp = HttpUtil::genHttpCache(pp, 1,
-        body->m_body, body->m_body_size);
+    rsp = HttpUtil::genHttpCache(pp, 1, body, blen);
 
-    ret = m_center->send(hd, rsp);
+    m_center->send(hd, rsp);
 
     HttpUtil::release(&cache);
-    return ret;
-}
-
-int TestDemo::procFrameMid(int, HttpCtx*, NodeMsg* msg) {
-    HttpFrameMid* body = NULL;
-    int ret = 0;
-
-    body = MsgCenter::getBody<HttpFrameMid>(msg);
-    (void)body;
-    
-    return ret;
-}
-
-HttpCtx* TestDemo::allocHttpEnv() {
-    HttpCtx* env = NULL;
-    
-    env = (HttpCtx*)CacheUtil::mallocAlign(sizeof(HttpCtx));
-    return env;
-}
-
-void TestDemo::freeHttpCtx(HttpCtx* ctx) {
-    if (NULL != ctx) {
-        CacheUtil::freeAlign(ctx);
-    }
-} 
-
-bool TestDemo::bindCtx(int, HttpCtx*) {
-    return true;
 }
 
 void TestDemo::writeBytes(unsigned seq, const char* psz, 

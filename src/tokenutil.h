@@ -32,6 +32,8 @@ public:
     static bool isSpace(int ch);
     static bool isCR(int ch);
     static bool isLF(int ch);
+    static bool isNULL(int ch);
+    static bool isSeperator(int ch);
     static bool isDigit(int ch);
     static bool isHex(int ch);
     static int hex2Num(int ch);

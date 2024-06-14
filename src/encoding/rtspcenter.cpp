@@ -9,11 +9,14 @@
 #include"cache.h"
 #include"rtspdata.h"
 #include"httpcenter.h"
-#include"demo.h"
 #include"misc.h"
 #include"rtspres.h"
 #include"rtspsess.h"
+#include"rtspsdp.h"
 #include"socktool.h"
+#include"rtpcenter.h"
+#include"sockframe.h"
+#include"rtpinst.h"
 
 
 static const Token DEF_NULL_TOKEN(NULL, 0);
@@ -21,20 +24,16 @@ static const Token DEF_NULL_TOKEN(NULL, 0);
 static const char DEF_RTSP_PUBLIC_VAL[] =
     "OPTIONS, DESCRIBE, ANNOUNCE, SETUP, TEARDOWN, PLAY, RECORD";
 
-RtspHandler::RtspHandler(HttpCenter* center)
-    : m_center(center) {
-
-    m_dealer = new TestDemo(center);
-    m_resource = new RtspRes;
+RtspHandler::RtspHandler(SockFrame* frame, 
+    HttpCenter* center)
+    : m_frame(frame), m_center(center) { 
+    
     m_sess = new RtspSess;
+    m_rtp_center = new RtpCenter(frame);
+    m_resource = new RtspRes(frame, m_rtp_center);
 }
 
 RtspHandler::~RtspHandler() {
-    if (NULL != m_dealer) {
-        delete m_dealer;
-        m_dealer = NULL;
-    }
-
     if (NULL != m_resource) {
         delete m_resource;
         m_resource = NULL;
@@ -43,6 +42,11 @@ RtspHandler::~RtspHandler() {
     if (NULL != m_sess) {
         delete m_sess;
         m_sess = NULL;
+    }
+
+    if (NULL != m_rtp_center) {
+        delete m_rtp_center;
+        m_rtp_center = NULL;
     }
 }
 
@@ -207,28 +211,18 @@ void RtspHandler::parseField(RtspReq* req,
     }
 }
 
-int RtspHandler::parseSdp(RtspCtx* ctx,
-    RtspReq& req) {
-    int ret = 0;
-
+bool RtspHandler::chkSdpHdr(RtspReq& req) {
     if (!TokenUtil::strCmp(&req.m_content_type,
         DEF_RTSP_FIELD_CONTENT_TYPE_VAL, true)) {
-        return -1;
+        return false;
     }
 
     if (!(0 < req.m_body.m_len && 
         4096 > req.m_body.m_len)) {
-        return -1;
+        return false;
     }
 
-    ret = m_resource->parseSDP(req.m_path, req.m_body);
-    if (0 == ret) {
-        ctx->m_is_publisher = true;
-        TokenUtil::copy(ctx->m_path, sizeof(ctx->m_path),
-            &req.m_path);
-    }
-    
-    return ret;
+    return true; 
 }
 
 void RtspHandler::parseFrame(RtspReq* req,
@@ -270,95 +264,54 @@ void RtspHandler::parseFrame(RtspReq* req,
     }
 }
 
-void RtspHandler::resetRtsp(RtspCtx* ctx) {
+RtspCtx* RtspHandler::allocRtsp() {
+    RtspCtx* ctx = NULL;
+    
+    ctx = (RtspCtx*)CacheUtil::mallocAlign(sizeof(RtspCtx)); 
     MiscTool::bzero(ctx, sizeof(RtspCtx));
+    return ctx;
 }
 
-HttpCtx* RtspHandler::allocHttpEnv() {
-    RtspEnv* env = NULL;
+void RtspHandler::freeRtsp(RtspCtx* ctx) {
+    FFStream* ff = NULL;
     
-    env = (RtspEnv*)CacheUtil::mallocAlign(sizeof(RtspEnv));
-    
-    resetRtsp(&env->m_rtsp);
-    return &env->m_http;
-}
-
-void RtspHandler::freeHttpCtx(HttpCtx* ctx) {
-    RtspEnv* env = (RtspEnv*)ctx;
-    
-    if (NULL != env) {
-        resetRtsp(&env->m_rtsp);
+    if (NULL != ctx) {
+        for (int i=0; i<ctx->m_stream_cnt; ++i) {
+            ff = &ctx->m_stream[i];
+            if (ff->m_setup) {
+                m_resource->delFF(ff); 
+                ff->m_setup = false;
+            }
+        }
         
-        CacheUtil::freeAlign(env);
+        CacheUtil::freeAlign(ctx);
     }
-}
+} 
 
-bool RtspHandler::bindCtx(int fd, HttpCtx* ctx) {
-    RtspEnv* env = NULL;
-    RtspCtx* rtsp = NULL;
-    int ret = 0;
-    SockAddr addr;
-    SockName name;
-    Token tmp;
-
-    env = (RtspEnv*)ctx; 
-    rtsp = &env->m_rtsp;
-
-    ret = SockTool::getLocalSock(fd, addr);
-    if (0 == ret) {
-        SockTool::addr2IP(&name, &addr);
-        
-        tmp.set(name.m_ip);
-        TokenUtil::copy(rtsp->m_server_ip, 
-            sizeof(rtsp->m_server_ip), &tmp);
-    }
-    
-    ret = SockTool::getPeerSock(fd, addr);
-    if (0 == ret) {
-        SockTool::addr2IP(&name, &addr);
-        
-        tmp.set(name.m_ip);
-        TokenUtil::copy(rtsp->m_client_ip, 
-            sizeof(rtsp->m_client_ip), &tmp);
-    }
-    
-    return true;
-}
-
-int RtspHandler::procFrameHd(int hd, HttpCtx* ctx, NodeMsg* msg) { 
+bool RtspHandler::procFrameHd(int hd, NodeMsg* msg) { 
     HttpFrameHd* frame = NULL;
-    RtspEnv* env = NULL;
     bool done = false;
-    int ret = 0;
     RtspRsp rsp;
+    RtspReq req; 
 
-    MiscTool::bzero(&rsp, sizeof(RtspRsp));
-    rsp.m_errcode = RTSP_STATUS_OK;
-    
-    env = (RtspEnv*)ctx; 
+    MiscTool::bzero(&rsp, sizeof(rsp));
+    MiscTool::bzero(&req, sizeof(req));
+
     frame = MsgCenter::getBody<HttpFrameHd>(msg);
+    parseFrame(&req, frame); 
     
-    ret = dealRtspMsg(hd, &env->m_rtsp, frame, rsp, done);
-    if (done) {
-        rtspReply(hd, &env->m_rtsp, rsp);
-    } else { 
-        ret = m_dealer->procFrameHd(hd, ctx, msg);
-    }
-
+    rsp.m_errcode = RTSP_STATUS_OK;
+    rsp.m_seq = req.m_seq;
+    
+    done = dealRtspMsg(hd, req, rsp);
+    
     HttpUtil::release(&rsp.m_head);
     HttpUtil::release(&rsp.m_body);
-    return ret;
+    
+    return done;
 }
 
-int RtspHandler::procFrameMid(int, HttpCtx* ctx, NodeMsg*) {
-    RtspEnv* env = (RtspEnv*)ctx;
-
-    (void)env;
-    return 0;
-}
-
-void RtspHandler::rtspReply(int fd,
-    RtspCtx* ctx, RtspRsp& rsp) {
+void RtspHandler::rtspReply(int fd, RtspRsp& rsp) {
     NodeMsg* msg = NULL;
     HttpCache* pp[2] = {NULL};
     HttpCache cmdCache;
@@ -368,8 +321,8 @@ void RtspHandler::rtspReply(int fd,
     HttpUtil::addRspParam(&cmdCache, 
         RTSP_VER_10_VAL, rsp.m_errcode);
     
-    HttpUtil::addEnumFieldInt(&cmdCache,
-        ENUM_HTTP_SEQ, ctx->m_seq);
+    HttpUtil::addEnumFieldInt(&cmdCache, 
+        ENUM_HTTP_SEQ, rsp.m_seq);
 
     pp[0] = &cmdCache;
     pp[1] = &rsp.m_head;
@@ -383,47 +336,49 @@ void RtspHandler::rtspReply(int fd,
     HttpUtil::release(&cmdCache);
 }
 
-int RtspHandler::dealRtspMsg(int, RtspCtx* ctx,
-    HttpFrameHd* frame, RtspRsp& rsp, bool& done) {
-    int ret = 0; 
-    RtspReq req;
+bool RtspHandler::dealRtspMsg(int hd, RtspReq& req, RtspRsp& rsp) {
+    int ret = 0;
+    bool done = false;
 
-    parseFrame(&req, frame); 
-
-    ctx->m_seq = req.m_seq;
-    
     if (TokenUtil::strCmp(&req.m_method, "OPTIONS")) {
         done = true;
-        ret = dealOption(ctx, req, rsp);
+        ret = dealOption(hd, req, rsp);
     } else if (TokenUtil::strCmp(&req.m_method, "DESCRIBE")) {
         done = true;
-        ret = dealDescribe(ctx, req, rsp);
+        ret = dealDescribe(hd, req, rsp);
     } else if (TokenUtil::strCmp(&req.m_method, "SETUP")) {
         done = true;
-        ret = dealSetup(ctx, req, rsp);
+        ret = dealSetup(hd, req, rsp);
     } else if (TokenUtil::strCmp(&req.m_method, "ANNOUNCE")) {
         done = true;
-        ret = dealAnnounce(ctx, req, rsp);
+        ret = dealAnnounce(hd, req, rsp);
     } else if (TokenUtil::strCmp(&req.m_method, "RECORD")) {
         done = true;
-        ret = dealRecord(ctx, req, rsp);
+        ret = dealRecord(hd, req, rsp);
     } else if (TokenUtil::strCmp(&req.m_method, "PLAY")) {
         done = true;
-        ret = dealPlay(ctx, req, rsp);
+        ret = dealPlay(hd, req, rsp);
     } else if (TokenUtil::strCmp(&req.m_method, "PAUSE")) {
         done = true;
     } else if (TokenUtil::strCmp(&req.m_method, "TEARDOWN")) {
         done = true;
-        ret = dealTeardown(ctx, req, rsp);
+        ret = dealTeardown(hd, req, rsp);
     } else {
         done = false;
-    } 
+    }
+
+    if (done) {
+        rtspReply(hd, rsp);
+        
+        if (0 != ret) {
+            //m_frame->closeData(hd);
+        }
+    }
     
-    return ret;
+    return done;
 }
 
-int RtspHandler::dealOption(RtspCtx*, 
-    RtspReq&, RtspRsp& rsp) {
+int RtspHandler::dealOption(int, RtspReq&, RtspRsp& rsp) {
     int ret = 0;
     
     HttpUtil::addEnumField(&rsp.m_head,
@@ -433,21 +388,24 @@ int RtspHandler::dealOption(RtspCtx*,
     return ret;
 }
 
-int RtspHandler::dealDescribe(RtspCtx* ctx,
-    RtspReq& req, RtspRsp& rsp) {
+int RtspHandler::dealDescribe(int, RtspReq& req, RtspRsp& rsp) {
     int ret = 0;
+    char path[MAX_PATH_SIZE] = {0};
+
+    TokenUtil::copy(path, sizeof(path), &req.m_path);
 
     do { 
-        ret = m_resource->prepareSDP(
-            &rsp.m_body, req.m_path);
+        if (!TokenUtil::strCmp(&req.m_accept, 
+            DEF_RTSP_FIELD_CONTENT_TYPE_VAL, true)) {
+            rsp.m_errcode = RTSP_STATUS_SERVICE;
+            break;
+        }
+        
+        ret = m_resource->genSdp(&rsp.m_body, path);
         if (0 != ret) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         } 
-
-        ctx->m_is_publisher = false;
-        TokenUtil::copy(ctx->m_path, sizeof(ctx->m_path),
-            &req.m_path); 
 
         HttpUtil::addEnumField(&rsp.m_head,
             ENUM_HTTP_CONTENT_BASE, req.m_url);
@@ -457,112 +415,82 @@ int RtspHandler::dealDescribe(RtspCtx* ctx,
             DEF_RTSP_FIELD_CONTENT_TYPE_VAL);
         
         rsp.m_errcode = RTSP_STATUS_OK;
+        return 0;
     } while (false);
     
     return ret;
 }
 
-int RtspHandler::prepareSess(RtspCtx* ctx, 
-    RtspReq& req) {
-    SessionCtx* sess = NULL;
-    char buf[DEF_SESS_NUM_LEN] = {0};
+RtspCtx* RtspHandler::prepareSess(RtspReq& req) {
+    RtspCtx* ctx = NULL;
     
     if (DEF_NULL_CHAR == req.m_sid[0]) {
-        MiscTool::getRand(buf, DEF_SESS_NUM_LEN);
-        TokenUtil::toHexStr(req.m_sid, 
-            buf, DEF_SESS_NUM_LEN);
+        m_sess->genSess(req.m_sid, sizeof(req.m_sid));
 
-        strncpy(ctx->m_sid, req.m_sid,
-            DEF_SESS_NUM_LEN);
-    } else if (chkSid(ctx, req)) {
-        /* sid valid */
+        ctx = allocRtsp(); 
+        MiscTool::strCpy(ctx->m_sid, req.m_sid, MAX_SESS_ID_LEN); 
+        m_sess->addSess(ctx);
     } else {
-        /* invalid sid */
-        return -1;
+        ctx = m_sess->findSess(req.m_sid);
     }
 
-    if (NULL != ctx->m_sess) {
-        return 0;
-    } else {
-        sess = m_sess->prepareSess(ctx->m_sid, ctx->m_path);
-        if (NULL != sess) {
-            sess->m_is_publisher = ctx->m_is_publisher;
-            
-            ctx->m_sess = sess;
-            return 0;
-        } else {
-            return -1;
-        }
-    } 
+    return ctx;
 }
 
-FFStream* RtspHandler::prepareStream(RtspCtx* ctx, 
-    RtspReq& req) {
-    SdpMedia* media = NULL;
-    FFStream* s = NULL;
-    RtspTransport* transport = NULL;
-
-    transport = &req.m_transport;
-
-    do {
-        if (!transport->m_is_rtp_udp) {
-            break;
-        }
-
-        media = m_resource->findMedia(req.m_path);
-        if (NULL == media) {
-            break;
-        }
-
-        s = m_sess->creatStream();
-        if (NULL == s) {
-            break;
-        }
-
-        s->m_media = media;
-        s->m_client_port_min = transport->m_client_port_min;
-        s->m_client_port_max = transport->m_client_port_max;
-        s->m_server_port_min = 80000;
-        s->m_server_port_max = 80001;
-
-        SockTool::ip2Net(&s->m_server_addr, ctx->m_server_ip);
-        SockTool::ip2Net(&s->m_client_addr, ctx->m_client_ip);
-
-        return s;
-    } while (false); 
-
-    if (NULL != s) {
-        m_sess->freeStream(s);
-    }
-    
-    return NULL;
-}
-
-int RtspHandler::dealSetup(RtspCtx* ctx, 
-    RtspReq& req, RtspRsp& rsp) {
-    SessionCtx* sess = NULL;
-    FFStream* s = NULL;
+int RtspHandler::dealSetup(int fd, RtspReq& req, RtspRsp& rsp) {
+    RtspCtx* ctx = NULL;
+    InstStream* inst = NULL;
+    InstGroup* grp = NULL;
+    FFStream* ff = NULL;
     int ret = 0;
-    Token tmp;
+    bool found = false;
+    char cli_ip[DEF_IP_SIZE] = {0}; 
+    char path[MAX_PATH_SIZE] = {0};
+
+    TokenUtil::copy(path, sizeof(path), &req.m_path);
     
     do { 
-        ret = prepareSess(ctx, req);
-        if (0 == ret) {
-            sess = ctx->m_sess;
-        } else {
+        if (!req.m_transport.m_is_rtp_udp) {
+            rsp.m_errcode = RTSP_STATUS_SERVICE;
+            break;
+        } 
+        
+        ctx = prepareSess(req);
+        if (NULL == ctx) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         }
 
-        s = prepareStream(ctx, req);
-        if (NULL == s) {
+        found = existFF(ctx, path);
+        if (found) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         }
+
+        grp = m_resource->findGrp(path);
+        if (NULL != grp) {
+            inst = grp->m_stream[0];
+        } else { 
+            inst = m_resource->findInst(path);
+            if (NULL == inst) {
+                rsp.m_errcode = RTSP_STATUS_SERVICE;
+                break;
+            }
+        }
         
-        s->m_idx = sess->m_stream_cnt;
-        sess->m_stream[sess->m_stream_cnt] = s;
-        ++sess->m_stream_cnt;
+        m_frame->getAddr(fd, NULL, cli_ip, sizeof(cli_ip));
+
+        ff = &ctx->m_stream[ctx->m_stream_cnt];
+        ret = m_resource->setupFF(ff, inst, cli_ip, 
+            req.m_transport.m_client_port_min,
+            req.m_transport.m_client_port_max); 
+        if (0 != ret) {
+            rsp.m_errcode = RTSP_STATUS_SERVICE;
+            break;
+        } 
+
+        ff->m_rtsp = ctx;
+        ++ctx->m_stream_cnt;
 
         HttpUtil::addEnumField(&rsp.m_head,
             ENUM_HTTP_SESSION, ctx->m_sid);
@@ -570,31 +498,35 @@ int RtspHandler::dealSetup(RtspCtx* ctx,
         HttpUtil::addFormat(&rsp.m_head,
             "Transport: RTP/AVP/UDP;unicast;"
             "client_port=%d-%d;server_port=%d-%d\r\n",
-            s->m_client_port_min,
-            s->m_client_port_max,
-            s->m_server_port_min,
-            s->m_server_port_max);
+            ff->m_addr.m_min_port,
+            ff->m_addr.m_max_port,
+            inst->m_stat.m_addr.m_min_port,
+            inst->m_stat.m_addr.m_max_port);
 
         rsp.m_errcode = RTSP_STATUS_OK;
+        return 0;
     } while (false);
 
-    return ret;
+    return -1;
 }
 
-int RtspHandler::dealPlay(RtspCtx* ctx, 
-    RtspReq& req, RtspRsp& rsp) {
+int RtspHandler::dealPlay(int, RtspReq& req, RtspRsp& rsp) {
+    RtspCtx* ctx = NULL;
     int ret = 0;
+    bool bOk = false;
+    char path[MAX_PATH_SIZE] = {0};
+
+    TokenUtil::copy(path, sizeof(path), &req.m_path);
 
     do {
-        if (NULL == ctx->m_sess ||
-            !chkSid(ctx, req) ||
-            ctx->m_is_publisher) {
+        ctx = m_sess->findSess(req.m_sid);
+        if (NULL == ctx) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         } 
-        
-        ret = startStream(ctx, req.m_path);
-        if (0 != ret) {
+
+        bOk = activate(ctx, path, false);
+        if (!bOk) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         }
@@ -608,18 +540,23 @@ int RtspHandler::dealPlay(RtspCtx* ctx,
     return ret;
 }
 
-int RtspHandler::dealTeardown(RtspCtx* ctx, 
-    RtspReq& req, RtspRsp& rsp) {
+int RtspHandler::dealTeardown(int, RtspReq& req, RtspRsp& rsp) {
+    RtspCtx* ctx = NULL;
     int ret = 0;
+    bool bOk = false;
+    char path[MAX_PATH_SIZE] = {0};
+
+    TokenUtil::copy(path, sizeof(path), &req.m_path);
 
     do {
-        if (!chkSid(ctx, req)) {
+        ctx = m_sess->findSess(req.m_sid);
+        if (NULL == ctx) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         } 
 
-        ret = stopStream(ctx, req.m_path);
-        if (0 != ret) {
+        bOk = removeFF(ctx, path);
+        if (!bOk) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         }
@@ -633,46 +570,59 @@ int RtspHandler::dealTeardown(RtspCtx* ctx,
     return ret;
 }
 
-int RtspHandler::dealAnnounce(RtspCtx* ctx, 
-    RtspReq& req, RtspRsp& rsp) {
+int RtspHandler::dealAnnounce(int fd, RtspReq& req, RtspRsp& rsp) {
     int ret = 0;
+    bool bOk = false;
+    SockAddr addr;
+    SockName name;
+    char cname[MAX_CNAME_SIZE] = {0};
+    char path[MAX_PATH_SIZE] = {0};
 
-    do { 
-        ret = parseSdp(ctx, req);
+    TokenUtil::copy(path, sizeof(path), &req.m_path);
+
+    do {
+        bOk = chkSdpHdr(req);
+        if (!bOk) {
+            rsp.m_errcode = RTSP_STATUS_SERVICE;
+            ret = -1;
+            break;
+        }
+
+        SockTool::getLocalSock(fd, addr);
+        SockTool::addr2IP(&name, &addr);
+
+        m_sess->genSess(cname, MAX_CNAME_SIZE);
+        
+        ret = m_resource->addGrp(name.m_ip, path, cname, &req.m_body);
         if (0 != ret) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
-        } 
+        }
 
         rsp.m_errcode = RTSP_STATUS_OK;
-    } while (false);
-
+        return 0;
+    } while (false); 
+    
     return ret;
 }
 
-bool RtspHandler::chkSid(RtspCtx* ctx, 
-    RtspReq& req) {
-    if (0 == strcmp(req.m_sid, ctx->m_sid)) {
-        return true;
-    } else {
-        return false;
-    } 
-}
-
-int RtspHandler::dealRecord(RtspCtx* ctx, 
-    RtspReq& req, RtspRsp& rsp) { 
+int RtspHandler::dealRecord(int, RtspReq& req, RtspRsp& rsp) { 
+    RtspCtx* ctx = NULL;
     int ret = 0;
+    bool bOk = false;
+    char path[MAX_PATH_SIZE] = {0};
+
+    TokenUtil::copy(path, sizeof(path), &req.m_path);
 
     do {
-        if (NULL == ctx->m_sess ||
-            !chkSid(ctx, req) ||
-            !ctx->m_is_publisher) {
+        ctx = m_sess->findSess(req.m_sid);
+        if (NULL == ctx) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         } 
 
-        ret = startStream(ctx, req.m_path);
-        if (0 != ret) {
+        bOk = activate(ctx, path, true);
+        if (!bOk) {
             rsp.m_errcode = RTSP_STATUS_SERVICE;
             break;
         }
@@ -686,49 +636,97 @@ int RtspHandler::dealRecord(RtspCtx* ctx,
     return ret;
 }
 
-int RtspHandler::startStream(RtspCtx* ctx, const Token& path) {
-    SessionCtx* sess = NULL;
-    FFStream* s = NULL;
+bool RtspHandler::activate(RtspCtx* ctx, 
+    const char path[], bool is_publisher) {
+    FFStream* ff = NULL;
+    InstStream* inst = NULL;
+    bool bOk = false;
 
-    sess = ctx->m_sess;
-    if (m_sess->isSessPath(sess, path)) {
-        /* start all stream */
-        for (int i=0; i<sess->m_stream_cnt; ++i) {
-            s = sess->m_stream[i];
-            s->m_on = true;
-        }
-    } else {
-        s = m_sess->findStream(sess, path);
-        if (NULL != s) {
-            s->m_on = true;
-        } else {
-            return -1;
+    for (int i=0; i<ctx->m_stream_cnt; ++i) {
+        ff = &ctx->m_stream[i];
+        
+        if (ff->m_setup) {
+            inst = ff->m_inst;
+            
+            if (RtpInstMng::match(path, inst)) {
+                RtpInstMng::setPublisher(ff, is_publisher);
+                RtpInstMng::activateFF(inst, ff); 
+
+                if(!bOk) {
+                    bOk = true;
+                }
+            }
         }
     }
 
-    return 0;
+    return bOk;
 }
 
-int RtspHandler::stopStream(RtspCtx* ctx, const Token& path) {
-    SessionCtx* sess = NULL;
-    FFStream* s = NULL;
+bool RtspHandler::deactivate(RtspCtx* ctx, const char path[]) {
+    FFStream* ff = NULL;
+    InstStream* inst = NULL;
+    bool bOk = false;
 
-    sess = ctx->m_sess;
-    if (m_sess->isSessPath(sess, path)) {
-        /* start all stream */
-        for (int i=0; i<sess->m_stream_cnt; ++i) {
-            s = sess->m_stream[i];
-            s->m_on = false;
-        }
-    } else {
-        s = m_sess->findStream(sess, path);
-        if (NULL != s) {
-            s->m_on = false;
-        } else {
-            return -1;
+    for (int i=0; i<ctx->m_stream_cnt; ++i) {
+        ff = &ctx->m_stream[i];
+
+        if (ff->m_setup) {
+            inst = ff->m_inst;
+            
+            if (RtpInstMng::match(path, inst)) {
+                RtpInstMng::deactivateFF(inst, ff);
+
+                if(!bOk) {
+                    bOk = true;
+                }
+            }
         }
     }
 
-    return 0;
+    return bOk;
+}
+
+bool RtspHandler::removeFF(RtspCtx* ctx, const char path[]) {
+    FFStream* ff = NULL;
+    InstStream* inst = NULL;
+    bool bOk = false;
+
+    for (int i=0; i<ctx->m_stream_cnt; ++i) {
+        ff = &ctx->m_stream[i];
+
+        if (ff->m_setup) {
+            inst = ff->m_inst;
+            
+            if (RtpInstMng::match(path, inst)) {
+                m_resource->delFF(ff); 
+                ff->m_setup = false;
+
+                if(!bOk) {
+                    bOk = true;
+                }
+            }
+        }
+    }
+
+    return bOk;
+} 
+
+bool RtspHandler::existFF(RtspCtx* ctx, const char path[]) {
+    FFStream* ff = NULL;
+    InstStream* inst = NULL;
+    Token token(path);
+    
+    for (int i=0; i<ctx->m_stream_cnt; ++i) {
+        ff = &ctx->m_stream[i];
+        if (ff->m_setup) {
+            inst = ff->m_inst;
+            
+            if (TokenUtil::strCmp(&token, inst->m_path)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 

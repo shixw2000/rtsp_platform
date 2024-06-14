@@ -37,6 +37,7 @@ private:
     HttpSvr* m_http_svr;
     HttpCli* m_http_cli;
     IHttpDealer* m_dealer;
+    IHttpDealer* m_demo;
     HttpCenter* m_center;
 };
 

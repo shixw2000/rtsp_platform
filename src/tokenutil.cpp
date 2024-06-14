@@ -198,6 +198,14 @@ bool TokenUtil::isLF(int ch) {
     return DEF_LF_CHAR == ch;
 }
 
+bool TokenUtil::isSeperator(int ch) {
+    return DEF_URL_SEP_CHAR == ch;
+}
+
+bool TokenUtil::isNULL(int ch) {
+    return DEF_NULL_CHAR == ch;
+}
+
 bool TokenUtil::isDigit(int ch) {
     return '0' <= ch && ch <= '9';
 }

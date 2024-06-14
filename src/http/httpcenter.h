@@ -11,6 +11,8 @@ class HttpTool;
 class IHttpDealer;
 
 class HttpCenter {
+    static const int MAX_DEALER_SIZE = 8;
+    
 public:
     HttpCenter(SockFrame* frame);
     ~HttpCenter();
@@ -18,15 +20,13 @@ public:
     int init();
     void finish();
 
-    void setDealer(IHttpDealer* dealer);
+    void addDealer(IHttpDealer* dealer);
 
     void printFrameHd(NodeMsg* msg);
-    void printFrameMid(NodeMsg* msg);
 
     int parseData(int fd, const char* buf, int size);
 
-    HttpCtx* creatSvrSock(int fd);
-    HttpCtx* creatCliSock();
+    HttpCtx* creatSock();
 
     void onListenerClose(int);
     
@@ -40,11 +40,11 @@ public:
 
     int dispatch(int fd, NodeMsg* msg);
 
+    void printHttpSendMsg(NodeMsg* msg);
+    
     int send(int fd, NodeMsg* msg);
     
     NodeMsg* creatFrameHd(HttpCtx* ctx, bool isEnd);
-
-    NodeMsg* creatFrameMid(HttpCtx* ctx, bool isEnd); 
 
     void resetCtx(HttpCtx* ctx); 
 
@@ -58,16 +58,15 @@ public:
         const Token& name, Token* val);
 
 private:
-    HttpCtx* allocHttpEnv();
-    void freeHttpCtx(HttpCtx*);
+    HttpCtx* allocHttp();
+    void freeHttp(HttpCtx*);
 
-    int procFrameHd(int hd, HttpCtx* ctx, NodeMsg* msg);
-    int procFrameMid(int hd, HttpCtx* ctx, NodeMsg* msg);
+    int procFrameHd(int hd, NodeMsg* msg);
 
 private:
     SockFrame* m_frame;
     HttpTool* m_tool;
-    IHttpDealer* m_dealer;
+    IHttpDealer* m_dealer[MAX_DEALER_SIZE];
 };
 
 

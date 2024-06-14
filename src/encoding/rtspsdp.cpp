@@ -27,59 +27,56 @@ static const struct {
     int clock_rate;
     int audio_channels;
 } rtp_payload_types[] = {
-  {3, "GSM",         AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
-  {4, "G723",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_G723_1, 8000, 1},
-  {5, "DVI4",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
-  {6, "DVI4",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 16000, 1},
-  {7, "LPC",         AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
-  {12, "QCELP",      AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_QCELP, 8000, 1},
-  {13, "CN",         AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
-  {14, "MPA",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_MP2, -1, -1},
-  {14, "MPA",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_MP3, -1, -1},
-  {15, "G728",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
-  {16, "DVI4",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 11025, 1},
-  {17, "DVI4",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 22050, 1},
-  {18, "G729",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
-  {25, "CelB",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_NONE, 90000, -1},
-  {26, "JPEG",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_MJPEG, 90000, -1},
-  {28, "nv",         AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_NONE, 90000, -1},
-  {31, "H261",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_H261, 90000, -1},
-  {32, "MPV",        AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_MPEG1VIDEO, 90000, -1},
-  {32, "MPV",        AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_MPEG2VIDEO, 90000, -1},
-  {34, "H263",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_H263, 90000, -1},
+    {0, "PCMU",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_PCM_MULAW, 8000, 1},
+    {3, "GSM",         AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
+    {4, "G723",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_G723_1, 8000, 1},
+    {5, "DVI4",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
+    {6, "DVI4",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 16000, 1},
+    {7, "LPC",         AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
+    {12, "QCELP",      AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_QCELP, 8000, 1},
+    {13, "CN",         AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
+    {14, "MPA",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_MP2, -1, -1},
+    {14, "MPA",        AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_MP3, -1, -1},
+    {15, "G728",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
+    {16, "DVI4",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 11025, 1},
+    {17, "DVI4",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 22050, 1},
+    {18, "G729",       AVMEDIA_TYPE_AUDIO,   AV_CODEC_ID_NONE, 8000, 1},
+    {25, "CelB",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_NONE, 90000, -1},
+    {26, "JPEG",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_MJPEG, 90000, -1},
+    {28, "nv",         AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_NONE, 90000, -1},
+    {31, "H261",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_H261, 90000, -1},
+    {32, "MPV",        AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_MPEG1VIDEO, 90000, -1},
+    {32, "MPV",        AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_MPEG2VIDEO, 90000, -1},
+    {34, "H263",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_H263, 90000, -1},
 
-  {0, "X-MP3-draft-00", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_MP3ADU, -1, -1},
-  {0, "speex", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_SPEEX, -1, -1},
-  {0, "opus", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_OPUS, -1, -1},
-  {0, "AMR", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AMR_NB, -1, -1},
-  {0, "AMR-WB", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AMR_WB, -1, -1},
-  {0, "H263-1998", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_H263, -1, -1},
-  {0, "H263-2000", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_H263, -1, -1},
-  {0, "H264",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_H264, 90000, -1}, 
-  {0, "iLBC", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_ILBC, -1, -1},
-  {0, "JPEG", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_MJPEG, -1, -1},
-  {0, "MP4A-LATM", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AAC, -1, -1},
-  {0, "MP4V-ES", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_MPEG4, -1, -1},
-  {0, "MPEG4-GENERIC", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AAC, 44100, 2},
-  {0, "x-Purevoice", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_QCELP, -1, -1},
-  {0, "X-QDM", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_NONE, -1, -1},
-  {0, "X-SV3V-ES",AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_NONE, -1, -1},
-  {0, "VP8", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_VP8, -1, -1},
-  {0, "theora", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_THEORA, -1, -1},
-  {0, "vorbis", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_VORBIS, -1, -1},
-    
-  {-1, "",           AVMEDIA_TYPE_UNKNOWN, AV_CODEC_ID_NONE, -1, -1}
+    {0, "X-MP3-draft-00", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_MP3ADU, -1, -1},
+    {0, "speex", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_SPEEX, -1, -1},
+    {0, "opus", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_OPUS, -1, -1},
+    {0, "AMR", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AMR_NB, -1, -1},
+    {0, "AMR-WB", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AMR_WB, -1, -1},
+    {0, "H263-1998", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_H263, -1, -1},
+    {0, "H263-2000", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_H263, -1, -1},
+    {0, "H264",       AVMEDIA_TYPE_VIDEO,   AV_CODEC_ID_H264, 90000, -1}, 
+    {0, "iLBC", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_ILBC, -1, -1},
+    {0, "JPEG", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_MJPEG, -1, -1},
+    {0, "MP4A-LATM", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AAC, -1, -1},
+    {0, "MP4V-ES", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_MPEG4, -1, -1},
+    {0, "MPEG4-GENERIC", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_AAC, 44100, 2},
+    {0, "x-Purevoice", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_QCELP, -1, -1},
+    {0, "X-QDM", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_NONE, -1, -1},
+    {0, "X-SV3V-ES",AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_NONE, -1, -1},
+    {0, "VP8", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_VP8, -1, -1},
+    {0, "theora", AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_THEORA, -1, -1},
+    {0, "vorbis", AVMEDIA_TYPE_AUDIO, AV_CODEC_ID_VORBIS, -1, -1},
+
+    {-1, "",           AVMEDIA_TYPE_UNKNOWN, AV_CODEC_ID_NONE, -1, -1}
 };
 
-SdpData* SdpUtil::creatSDP(const Token& path) {
+SdpData* SdpUtil::creatSDP() {
     SdpData* sdp = NULL;
-    SdpHeader* header = NULL;
 
     sdp = (SdpData*)CacheUtil::mallocAlign(sizeof(SdpData));
     MiscTool::bzero(sdp, sizeof(SdpData));
-    
-    header = &sdp->m_header;
-    TokenUtil::copy(header->m_path, sizeof(header->m_path), &path);
  
     return sdp;
 }
@@ -110,52 +107,7 @@ void SdpUtil::freeMedia(SdpMedia* media) {
     }
 }
 
-int SdpUtil::findMedia(SdpData* sdp, const Token& path) {
-    SdpHeader* header = NULL;
-    SdpMedia* media = NULL;
-    Token dst;
-    Token needle;
-
-    header = &sdp->m_header;
-    dst.set(header->m_path);
-
-    do {
-        
-        if (dst.m_len > path.m_len) {
-            break;
-        }
-        
-        needle.set(path.m_str, dst.m_len); 
-        if (!TokenUtil::strCmp(&dst, needle, false)) {
-            break;
-        }
-
-        if (dst.m_len == path.m_len) {
-            /* match resource path */
-            return 0;
-        } else if (DEF_URL_SEP_CHAR != path.m_str[dst.m_len]) {
-            break;
-        }
-        
-        /* partial match */
-        TokenUtil::substr(&needle, &path, dst.m_len + 1);
-        if (TokenUtil::isEmpty(&needle)) {
-            break;
-        } 
-
-        for (int i=0; i<sdp->m_media_cnt; ++i) {
-            media = sdp->m_media[i];
-            dst.set(media->m_path);
-            if (TokenUtil::strCmp(&dst, needle, false)) {
-                return i;
-            }
-        }
-    } while (false);
-    
-    return -1;
-}
-
-int SdpUtil::prepareSDP(HttpCache* cache, const SdpData* sdp) {
+int SdpUtil::genSDP(HttpCache* cache, const SdpData* sdp) {
     const SdpHeader* header = NULL;
     const SdpMedia* media = NULL;
     int total = 0; 
@@ -168,7 +120,7 @@ int SdpUtil::prepareSDP(HttpCache* cache, const SdpData* sdp) {
         total += writeSdpMedia(cache, media); 
     }
 
-    return total;
+    return 0 < total ? 0 : -1;
 }
 
 int SdpUtil::writeSdpAddr(HttpCache* cache, const char ip[], int ttl) {
@@ -532,8 +484,8 @@ void SdpUtil::parseRtpmap(SdpData* sdp,
         media = sdp->m_media[sdp->m_media_cnt - 1]; 
         codec = &media->m_codec;
     
-        bOk = TokenUtil::nextInt(&codec->m_payload, &txt, " "); 
-        if (!bOk) {
+        bOk = TokenUtil::nextInt(&n, &txt, " "); 
+        if (!bOk || n != codec->m_payload) {
             break;
         }
 
@@ -601,11 +553,7 @@ void SdpUtil::parseFmtp(SdpData* sdp,
         codec = &media->m_codec;
         
         bOk = TokenUtil::nextInt(&payload, &txt, " "); 
-        if (!bOk) {
-            break;
-        }
-
-        if (codec->m_payload != payload) {
+        if (!bOk || codec->m_payload != payload) {
             break;
         }
 

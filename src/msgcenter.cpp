@@ -38,38 +38,6 @@ NodeMsg* MsgCenter::refMsg(NodeMsg* pb) {
     return msg;
 }
 
-void MsgCenter::setExtraCache(NodeMsg* pb, 
-        Cache* cache, int size) {
-    MsgTool::setExtraCache(pb, cache, size);
-}
-
-Cache* MsgCenter::getExtraCache(NodeMsg* pb) {
-    return MsgTool::getExtraCache(pb);
-}
-
-int MsgCenter::getExtraSize(NodeMsg* pb) {
-    return MsgTool::getExtraSize(pb);
-}
-
-int MsgCenter::getExtraPos(NodeMsg* pb) {
-    return MsgTool::getExtraPos(pb);
-}
-
-char* MsgCenter::getExtraData(NodeMsg* pb) {
-    Cache* cache = NULL;
-
-    cache = MsgTool::getExtraCache(pb);
-    if (NULL != cache) {
-        return CacheUtil::data(cache);
-    } else {
-        return NULL;
-    }
-}
-
-void MsgCenter::setExtraPos(NodeMsg* pb, int pos) {
-    MsgTool::setExtraPos(pb, pos);
-}
-
 void MsgCenter::freeFrameHdCb(char* psz) {
     HttpFrameHd* http = (HttpFrameHd*)psz;
 
@@ -80,32 +48,13 @@ void MsgCenter::freeFrameHdCb(char* psz) {
     http->m_body = NULL;
 }
 
-void MsgCenter::freeFrameMidCb(char* psz) {
-    HttpFrameMid* http = (HttpFrameMid*)psz;
-
-    CacheUtil::del(http->m_body);
-    http->m_body = NULL;
-}
-
 NodeMsg* MsgCenter::allocFrameHd(int line) {
     NodeMsg* msg = NULL;
     int total = sizeof(HttpFrameHd) + sizeof(Token) * line * 2;
 
     msg = allocMsg(ENUM_HTTP_FRAME_HD, total);
     if (NULL != msg) {
-        MsgTool::setInfraCb(msg, &MsgCenter::freeFrameHdCb);
-    }
-    
-    return msg;
-}
-
-NodeMsg* MsgCenter::allocFrameMid() {
-    NodeMsg* msg = NULL;
-    int total = sizeof(HttpFrameMid);
-
-    msg = allocMsg(ENUM_HTTP_FRAME_MID, total); 
-    if (NULL != msg) {
-        MsgTool::setInfraCb(msg, &MsgCenter::freeFrameMidCb);
+        MsgTool::setCb(msg, &MsgCenter::freeFrameHdCb);
     }
     
     return msg;
@@ -125,11 +74,68 @@ int MsgCenter::getType(NodeMsg* msg) {
     return ph->m_type;
 }
 
-char* MsgCenter::getMsg(NodeMsg* msg) {
-    return MsgTool::getMsg(msg);
+int MsgCenter::getTotal(NodeMsg* pb) {
+    return MsgTool::getLeft(pb) +
+        MsgTool::getLeft(pb, true);
 }
 
-int MsgCenter::getMsgSize(NodeMsg* msg) {
-    return MsgTool::getMsgSize(msg);
+char* MsgCenter::getMsg(NodeMsg* msg, bool ext) {
+    return MsgTool::getMsg(msg, ext);
+}
+
+char* MsgCenter::getCurr(NodeMsg* msg, bool ext) {
+    return MsgTool::getCurr(msg, ext);
+}
+
+int MsgCenter::getLeft(NodeMsg* msg, bool ext) {
+    return MsgTool::getLeft(msg, ext);
+}
+
+int MsgCenter::getMsgSize(NodeMsg* msg, bool ext) {
+    return MsgTool::getMsgSize(msg, ext);
+}
+
+int MsgCenter::getMsgPos(NodeMsg* msg, bool ext) {
+    return MsgTool::getMsgPos(msg, ext);
+}
+
+void MsgCenter::setMsgSize(NodeMsg* pb, int size, bool ext) {
+    MsgTool::setMsgSize(pb, size, ext);
+}
+
+void MsgCenter::setMsgPos(NodeMsg* pb, int pos, bool ext) {
+    MsgTool::setMsgPos(pb, pos, ext);
+}
+
+void MsgCenter::skipMsgPos(NodeMsg* pb, int pos, bool ext) {
+    MsgTool::skipMsgPos(pb, pos, ext);
+}
+
+Cache* MsgCenter::getCache(NodeMsg* pb, bool ext) {
+    Buffer* buffer = NULL;
+    
+    buffer = MsgTool::getBuffer(pb, ext);
+    return buffer->m_cache;
+}
+
+void MsgCenter::setCache(NodeMsg* pb, 
+    Cache* cache, int size, bool ext) {
+    MsgTool::setCache(pb, cache, size, ext);
+}
+
+NodeMsg* MsgCenter::allocUdpMsg(int size) {
+    return MsgTool::allocUdpMsg(size);
+}
+
+NodeMsg* MsgCenter::refUdpMsg(NodeMsg* msg) {
+    return MsgTool::refUdpMsg(msg);
+}
+
+int MsgCenter::setUdpAddr(NodeMsg* msg, const SockAddr& addr) {
+    return MsgTool::setUdpAddr(msg, addr);
+}
+
+const SockAddr* MsgCenter::getUdpAddr(NodeMsg* msg) {
+    return MsgTool::getUdpAddr(msg);
 }
 

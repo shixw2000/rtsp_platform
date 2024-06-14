@@ -6,20 +6,18 @@
 struct Cache;
 struct HttpFrameHd;
 class HttpCenter;
+class SockFrame;
 
 class TestDemo : public IHttpDealer {
 public:
-    TestDemo(HttpCenter* center);
+    TestDemo(SockFrame* frame, HttpCenter* center);
 
-    virtual int procFrameHd(int hd, HttpCtx* ctx, NodeMsg* msg);
+    virtual bool procFrameHd(int hd, NodeMsg* msg);
+
+    bool chkAlive(const HttpFrameHd* body);
+    void rspHttpFrame(int hd, int ver,
+        bool isAlive, Cache* body, int blen);
     
-    virtual int procFrameMid(int hd, HttpCtx* ctx, NodeMsg* msg);
-
-    virtual HttpCtx* allocHttpEnv();
-    virtual void freeHttpCtx(HttpCtx*);
-
-    virtual bool bindCtx(int fd, HttpCtx*);
-
     void writeBody(unsigned seq, Cache* cache, 
         int size, bool truncated);
 
@@ -27,6 +25,7 @@ public:
         int size, bool truncated);
 
 private:
+    SockFrame* m_frame;
     HttpCenter* m_center;
 }; 
 

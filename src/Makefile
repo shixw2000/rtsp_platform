@@ -17,10 +17,12 @@ prog:=bin_prog
 lib_name:=sockapi
 lib_path:=libs
 
-inc_dir=-I. -Iextern -Ihttp
+inc_dir=-I. -Iextern -Ihttp -Iencoding
 lib_dir=-Wl,-rpath=$(lib_path) -L$(lib_path) -l$(lib_name)
 
-all_srcs=$(wildcard test/*.cpp) $(wildcard http/*.cpp) $(wildcard ./*.cpp) 
+all_srcs=$(wildcard test/*.cpp) $(wildcard http/*.cpp)\
+ $(wildcard encoding/*.cpp) $(wildcard ./*.cpp)
+ 
 all_objs=$(all_srcs:.cpp=.o)
 
 default:$(prog)
