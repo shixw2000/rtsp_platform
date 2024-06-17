@@ -1,6 +1,7 @@
 #ifndef __RTPDATA_H__
 #define __RTPDATA_H__
 #include<map>
+#include<string>
 #include"rtpproto.h"
 #include"shareheader.h"
 #include"llist.h"
